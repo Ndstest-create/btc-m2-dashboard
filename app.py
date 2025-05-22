@@ -1,0 +1,72 @@
+import streamlit as st
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.linear_model import LinearRegression
+
+@st.cache_data
+def load_data():
+    dates = pd.date_range(start="2022-06-01", periods=36, freq='M')
+    np.random.seed(42)
+    m2 = np.cumsum(np.random.normal(loc=0.2, scale=0.1, size=36)) + 100
+    btc = []
+    for i in range(36):
+        if i < 3:
+            btc.append(30000)
+        else:
+            m2_lagged = m2[i - 3]
+            noise = np.random.normal(0, 5000)
+            btc.append((m2_lagged * 1000 - 95000) + noise)
+    df = pd.DataFrame({
+        "Date": dates,
+        "Global_M2": m2,
+        "BTC_Price": btc
+    })
+    return df
+
+df = load_data()
+st.title("📊 Global M2 vs Bitcoin Dashboard")
+st.markdown("เปรียบเทียบ M2 ทั่วโลกกับราคาบิทคอยน์ พร้อมวิเคราะห์ความสัมพันธ์และพยากรณ์")
+
+start_date, end_date = st.slider(
+    "เลือกช่วงเวลา",
+    min_value=df["Date"].min().date(),
+    max_value=df["Date"].max().date(),
+    value=(df["Date"].min().date(), df["Date"].max().date())
+)
+filtered_df = df[(df["Date"] >= pd.to_datetime(start_date)) & (df["Date"] <= pd.to_datetime(end_date))]
+
+st.subheader("📈 Time Series: Global M2 vs BTC Price")
+fig, ax1 = plt.subplots(figsize=(10, 5))
+ax1.plot(filtered_df["Date"], filtered_df["Global_M2"], color='blue', label="Global M2 (T)")
+ax1.set_ylabel("Global M2 (Trillions)", color='blue')
+ax2 = ax1.twinx()
+ax2.plot(filtered_df["Date"], filtered_df["BTC_Price"], color='orange', label="BTC Price")
+ax2.set_ylabel("BTC Price (USD)", color='orange')
+plt.title("Global M2 vs Bitcoin Price")
+st.pyplot(fig)
+
+st.subheader("📉 Linear Regression Analysis")
+df["Lagged_M2"] = df["Global_M2"].shift(3)
+df_reg = df.dropna()
+X = df_reg["Lagged_M2"].values.reshape(-1, 1)
+y = df_reg["BTC_Price"].values
+model = LinearRegression().fit(X, y)
+btc_pred = model.predict(X)
+r2 = model.score(X, y)
+st.markdown(f"**R² Score:** {r2:.2f}")
+st.markdown(f"**Prediction Formula:** `BTC = {model.coef_[0]:.2f} × M2 - {abs(model.intercept_):,.0f}`")
+
+fig2, ax = plt.subplots()
+ax.scatter(df_reg["Lagged_M2"], y, label="Actual", alpha=0.6)
+ax.plot(df_reg["Lagged_M2"], btc_pred, color='red', label="Prediction")
+plt.xlabel("Lagged Global M2")
+plt.ylabel("BTC Price")
+plt.title("Lagged M2 vs BTC Price")
+plt.legend()
+st.pyplot(fig2)
+
+st.subheader("🔮 พยากรณ์ BTC จากค่า M2")
+current_m2 = st.number_input("ใส่ค่า Global M2 (ล้านล้าน USD)", min_value=90.0, max_value=120.0, value=105.0, step=0.1)
+predicted_btc = model.predict(np.array([[current_m2]]))[0]
+st.success(f"📌 ค่าประมาณราคาบิทคอยน์: **${predicted_btc:,.0f}** USD")
